@@ -9,6 +9,8 @@ import android.view.Gravity;
 import android.widget.*;
 import android.hardware.camera2.CameraManager;
 import android.os.Handler;
+import android.os.Vibrator;
+import android.os.Build;
 
 public class MainActivity extends Activity {
 
@@ -16,26 +18,60 @@ public class MainActivity extends Activity {
     String cameraId;
     boolean روشن = false;
     boolean پلیسی = false;
+    boolean قرمز = true;
 
-    Button powerButton, policeButton;
-    TextView batteryText, statusText;
+    Button powerButton, policeButton, timerButton;
+    TextView batteryText, statusText, policeLight;
     Handler handler = new Handler();
+    Handler timerHandler = new Handler();
 
     Runnable policeRunnable = new Runnable() {
-        boolean state = false;
-
         @Override
         public void run() {
             if (!پلیسی) return;
 
             try {
-                state = !state;
-                camera.setTorchMode(cameraId, state);
+                قرمز = !قرمز;
+                policeLight.setBackgroundColor(
+                    قرمز ? Color.RED : Color.BLUE
+                );
+                camera.setTorchMode(cameraId, قرمز);
             } catch (Exception e) {}
 
-            handler.postDelayed(this, 300);
+            handler.postDelayed(this, 400);
         }
     };
+
+    Runnable batteryRunnable = new Runnable() {
+        @Override
+        public void run() {
+            int battery = ((BatteryManager)getSystemService(BATTERY_SERVICE))
+                    .getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+
+            batteryText.setText("🔋 باتری گوشی: " + battery + "%");
+            timerHandler.postDelayed(this, 10000);
+        }
+    };
+
+    Runnable autoOffRunnable = new Runnable() {
+        @Override
+        public void run() {
+            خاموش();
+            statusText.setText("⏱ تایمر تمام شد؛ چراغ خاموش شد");
+        }
+    };
+
+    void خاموش() {
+        پلیسی = false;
+        روشن = false;
+        handler.removeCallbacks(policeRunnable);
+        try {
+            camera.setTorchMode(cameraId, false);
+        } catch (Exception e) {}
+        powerButton.setText("روشن کردن چراغ");
+        policeButton.setText("🚨 حالت پلیسی");
+        policeLight.setBackgroundColor(Color.DKGRAY);
+    }
 
     @Override
     public void onCreate(Bundle b) {
@@ -55,12 +91,12 @@ public class MainActivity extends Activity {
 
         TextView title = new TextView(this);
         title.setText("HAMED FLASHLIGHT");
-        title.setTextColor(Color.rgb(180,100,255));
+        title.setTextColor(Color.rgb(190,100,255));
         title.setTextSize(27);
         title.setGravity(Gravity.CENTER);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("نسخه ۲ | چراغ قوه هوشمند");
+        subtitle.setText("نسخه ۳ | چراغ قوه هوشمند");
         subtitle.setTextColor(Color.LTGRAY);
         subtitle.setTextSize(15);
         subtitle.setGravity(Gravity.CENTER);
@@ -71,11 +107,20 @@ public class MainActivity extends Activity {
         statusText.setTextSize(18);
         statusText.setGravity(Gravity.CENTER);
 
+        policeLight = new TextView(this);
+        policeLight.setText("🚨");
+        policeLight.setTextSize(55);
+        policeLight.setGravity(Gravity.CENTER);
+        policeLight.setBackgroundColor(Color.DKGRAY);
+
         powerButton = new Button(this);
         powerButton.setText("روشن کردن چراغ");
 
         policeButton = new Button(this);
         policeButton.setText("🚨 حالت پلیسی");
+
+        timerButton = new Button(this);
+        timerButton.setText("⏱ خاموشی خودکار");
 
         batteryText = new TextView(this);
         batteryText.setTextColor(Color.GREEN);
@@ -83,8 +128,8 @@ public class MainActivity extends Activity {
         batteryText.setGravity(Gravity.CENTER);
 
         powerButton.setOnClickListener(v -> {
-            پلیسی = false;
-            handler.removeCallbacks(policeRunnable);
+            if (پلیسی) خاموش();
+
             روشن = !روشن;
 
             try {
@@ -97,33 +142,49 @@ public class MainActivity extends Activity {
         });
 
         policeButton.setOnClickListener(v -> {
-            پلیسی = !پلیسی;
-            روشن = false;
-
             if (پلیسی) {
+                خاموش();
+                statusText.setText("وضعیت: خاموش");
+            } else {
                 روشن = false;
+                پلیسی = true;
                 powerButton.setText("روشن کردن چراغ");
+                policeButton.setText("توقف حالت پلیسی");
                 statusText.setText("🚨 حالت پلیسی فعال");
                 handler.post(policeRunnable);
-            } else {
-                handler.removeCallbacks(policeRunnable);
-                try {
-                    camera.setTorchMode(cameraId, false);
-                } catch (Exception e) {}
-                statusText.setText("وضعیت: خاموش");
             }
         });
 
-        int battery = ((BatteryManager)getSystemService(BATTERY_SERVICE))
-                .getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+        timerButton.setOnClickListener(v -> {
+            String[] times = {"۱ دقیقه", "۵ دقیقه", "۱۰ دقیقه", "لغو تایمر"};
 
-        batteryText.setText("🔋 باتری گوشی: " + battery + "%");
+            new AlertDialog.Builder(this)
+                .setTitle("زمان خاموشی")
+                .setItems(times, (dialog, which) -> {
+                    timerHandler.removeCallbacks(autoOffRunnable);
+
+                    if (which == 3) {
+                        statusText.setText("تایمر لغو شد");
+                    } else {
+                        int[] minutes = {1, 5, 10};
+                        timerHandler.postDelayed(
+                            autoOffRunnable,
+                            minutes[which] * 60 * 1000L
+                        );
+                        statusText.setText("⏱ خاموشی در " + times[which]);
+                    }
+                }).show();
+        });
+
+        batteryRunnable.run();
 
         layout.addView(title);
         layout.addView(subtitle);
         layout.addView(statusText);
+        layout.addView(policeLight);
         layout.addView(powerButton);
         layout.addView(policeButton);
+        layout.addView(timerButton);
         layout.addView(batteryText);
 
         setContentView(layout);
@@ -132,11 +193,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        پلیسی = false;
-        handler.removeCallbacks(policeRunnable);
-
-        try {
-            camera.setTorchMode(cameraId, false);
-        } catch (Exception e) {}
+        خاموش();
+        timerHandler.removeCallbacks(autoOffRunnable);
+        timerHandler.removeCallbacks(batteryRunnable);
     }
 }
